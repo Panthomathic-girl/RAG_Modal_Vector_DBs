@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multimodal Chatbot</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            width: 70%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            padding: 12px 30px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-left: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .response-container {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            min-height: 100px;
+            border: 1px solid #dee2e6;
+        }
+        .streaming-text {
+            color: #333;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+        .support-message {
+            margin-top: 15px;
+            padding: 15px;
+            background-color: #e7f3ff;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        .options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .option-btn {
+            padding: 8px 16px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .option-btn:hover {
+            background-color: #218838;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status.streaming {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .status.complete {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📸 Multimodal Chatbot</h1>
+        
+        <div class="input-group">
+            <input type="text" id="queryInput" placeholder="Enter your query..." />
+            <button id="sendBtn" onclick="sendQuery()">Send</button>
+        </div>
+
+        <div class="status" id="status" style="display: none;"></div>
+
+        <div class="response-container">
+            <div class="streaming-text" id="response">
+                Response will appear here...
+            </div>
+            <div id="supportMessage"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+        let eventSource = null;
+
+        function setStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + type;
+            statusEl.style.display = 'block';
+        }
+
+        function clearStatus() {
+            const statusEl = document.getElementById('status');
+            statusEl.style.display = 'none';
+        }
+
+        async function sendQuery() {
+            const query = document.getElementById('queryInput').value.trim();
+            if (!query) {
+                alert('Please enter a query');
+                return;
+            }
+
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            document.getElementById('response').textContent = '';
+            document.getElementById('supportMessage').innerHTML = '';
+            setStatus('Connecting...', 'streaming');
+
+            const sendBtn = document.getElementById('sendBtn');
+            sendBtn.disabled = true;
+
+            try {
+                const encodedQuery = encodeURIComponent(query);
+                const url = `${API_BASE}/multimodal_chat/stream?query=${encodedQuery}`;
+                
+                eventSource = new EventSource(url);
+                let fullResponse = '';
+
+                eventSource.onopen = () => {
+                    setStatus('Streaming...', 'streaming');
+                };
+
+                eventSource.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.chunk) {
+                            fullResponse += data.chunk;
+                            document.getElementById('response').textContent = fullResponse;
+                        } else if (data.message) {
+                            document.getElementById('response').textContent = data.message;
+                            if (data.supportMessage) {
+                                displaySupportMessage(data.supportMessage);
+                            }
+                        } else if (data.error) {
+                            setStatus('Error: ' + data.error, 'error');
+                            document.getElementById('response').textContent = 'Error: ' + data.error;
+                        }
+                    } catch (e) {
+                        console.error('Error parsing data:', e);
+                    }
+                };
+
+                eventSource.addEventListener('done', (event) => {
+                    setStatus('Complete!', 'complete');
+                    eventSource.close();
+                    sendBtn.disabled = false;
+                });
+
+                eventSource.onerror = (error) => {
+                    console.error('EventSource error:', error);
+                    setStatus('Connection error', 'error');
+                    eventSource.close();
+                    sendBtn.disabled = false;
+                };
+
+            } catch (error) {
+                console.error('Error:', error);
+                setStatus('Error: ' + error.message, 'error');
+                document.getElementById('response').textContent = 'Error: ' + error.message;
+                sendBtn.disabled = false;
+            }
+        }
+
+        function displaySupportMessage(supportMessage) {
+            const supportDiv = document.getElementById('supportMessage');
+            
+            let html = '<div class="support-message">';
+            if (supportMessage.label) {
+                html += `<p><strong>${supportMessage.label}</strong></p>`;
+            }
+            
+            if (supportMessage.options && supportMessage.options.length > 0) {
+                html += '<div class="options">';
+                supportMessage.options.forEach(option => {
+                    html += `<button class="option-btn" onclick="selectOption('${option}')">${option}</button>`;
+                });
+                html += '</div>';
+            }
+            html += '</div>';
+            
+            supportDiv.innerHTML = html;
+        }
+
+        function selectOption(option) {
+            document.getElementById('queryInput').value = option;
+            sendQuery();
+        }
+
+        document.getElementById('queryInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendQuery();
+            }
+        });
+
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>

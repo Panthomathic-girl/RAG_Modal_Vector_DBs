@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rajasthan Patrika Chatbot - WebSocket Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .chat-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .chat-messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 20px;
+            background-color: #fafafa;
+            border-radius: 5px;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #007bff;
+            color: white;
+            text-align: right;
+        }
+        .bot-message {
+            background-color: #e9ecef;
+            color: #333;
+        }
+        .status-message {
+            background-color: #fff3cd;
+            color: #856404;
+            font-style: italic;
+        }
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .connection-status {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .support-options {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #e7f3ff;
+            border-radius: 5px;
+        }
+        .support-options button {
+            margin: 5px;
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <h1>Rajasthan Patrika Chatbot</h1>
+        
+        <div id="connectionStatus" class="connection-status disconnected">
+            Disconnected
+        </div>
+        
+        <div id="chatMessages" class="chat-messages"></div>
+        
+        <div class="input-container">
+            <input type="text" id="messageInput" placeholder="Type your message here..." disabled>
+            <button id="sendButton" onclick="sendMessage()" disabled>Send</button>
+        </div>
+        
+        <div id="supportOptions" class="support-options" style="display: none;">
+            <h4>Quick Options:</h4>
+            <button onclick="sendQuickMessage('Rajasthan Patrika')">About Rajasthan Patrika</button>
+            <button onclick="sendQuickMessage('Refund Policies')">Refund Policies</button>
+            <button onclick="sendQuickMessage('Ad Booking')">Ad Booking</button>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let isConnected = false;
+        let currentResponse = '';
+
+        function updateConnectionStatus(connected) {
+            const statusDiv = document.getElementById('connectionStatus');
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
+            
+            if (connected) {
+                statusDiv.textContent = 'Connected';
+                statusDiv.className = 'connection-status connected';
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                isConnected = true;
+            } else {
+                statusDiv.textContent = 'Disconnected';
+                statusDiv.className = 'connection-status disconnected';
+                messageInput.disabled = true;
+                sendButton.disabled = true;
+                isConnected = false;
+            }
+        }
+
+        function addMessage(content, type = 'bot-message') {
+            const messagesDiv = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = content;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            // Use port 8000 for the FastAPI server
+            // const wsUrl = `http://0.0.0.0:8000/chat/ws`;
+
+            // In websocket_test.html, replace in connectWebSocket():
+            const wsUrl = `ws://127.0.0.1:8000/chat/ws`;  // Fix protocol and host
+            
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = function(event) {
+                console.log('WebSocket connected');
+                updateConnectionStatus(true);
+                addMessage('Connected to chatbot. You can start chatting!', 'status-message');
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                console.log('Received:', data);
+                
+                switch(data.type) {
+                    case 'status':
+                        addMessage(data.message, 'status-message');
+                        break;
+                        
+                    case 'stream':
+                        // Handle streaming text
+                        currentResponse += data.chunk;
+                        // Update the last message or create new one
+                        const messages = document.getElementById('chatMessages');
+                        const lastMessage = messages.lastElementChild;
+                        if (lastMessage && lastMessage.classList.contains('bot-message')) {
+                            lastMessage.innerHTML = currentResponse;
+                        } else {
+                            addMessage(currentResponse, 'bot-message');
+                        }
+                        break;
+                        
+                    case 'complete':
+                        currentResponse = '';
+                        
+                        // Show support options if available
+                        if (data.data.supportMessage) {
+                            showSupportOptions(data.data.supportMessage);
+                        }
+                        break;
+                        
+                    case 'error':
+                        addMessage(data.message, 'error-message');
+                        break;
+                }
+            };
+            
+            socket.onclose = function(event) {
+                console.log('WebSocket disconnected');
+                updateConnectionStatus(false);
+                addMessage('Connection lost. Trying to reconnect...', 'error-message');
+                // Try to reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            socket.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                addMessage('Connection error occurred', 'error-message');
+            };
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            
+            if (message && isConnected) {
+                addMessage(message, 'user-message');
+                messageInput.value = '';
+                
+                socket.send(JSON.stringify({
+                    query: message
+                }));
+            }
+        }
+
+        function sendQuickMessage(message) {
+            if (isConnected) {
+                addMessage(message, 'user-message');
+                socket.send(JSON.stringify({
+                    query: message
+                }));
+            }
+        }
+
+        function showSupportOptions(supportMessage) {
+            const supportDiv = document.getElementById('supportOptions');
+            const optionsHtml = supportMessage.options.map(option => 
+                `<button onclick="sendQuickMessage('${option}')">${option}</button>`
+            ).join('');
+            
+            supportDiv.innerHTML = `
+                <h4>${supportMessage.label}</h4>
+                ${optionsHtml}
+            `;
+            supportDiv.style.display = 'block';
+        }
+
+        // Handle Enter key press
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Connect when page loads
+        window.onload = function() {
+            connectWebSocket();
+        };
+    </script>
+</body>
+</html>
